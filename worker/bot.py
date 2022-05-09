@@ -66,6 +66,7 @@ def first_start(message):
         'id': message['chat']['id']})
     db.create_row(user)
     db.close()
+    return user
 
 
 async def editor(call, user, text, keyboard, log_text=None):
@@ -258,8 +259,8 @@ async def repeat_all_messages(message: types.Message):
         text, keyboard, is_first_start = None, None, None
         log_text = True if str(message['chat']['id']) not in black_list else None
         if user is None:
-            first_start(message)
             is_first_start = True
+            user = first_start(message)
 
         if message['text'].lower().startswith('/'):
             update, log_text = True, True
