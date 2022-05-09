@@ -79,7 +79,8 @@ class SQL:
                         lock = True
                 if lock is False:
                     raise error
-        return dict(self.cursor.fetchone()) if fetchone else self.cursor.fetchall()
+        result = self.cursor.fetchone() if fetchone else self.cursor.fetchall()
+        return dict(result) if result and fetchone else result
     # ------------------------------------------------------------------------------------------ UTILITY END
 
     # ------------------------------------------------------------------------------------------ CREATION BEGIN
