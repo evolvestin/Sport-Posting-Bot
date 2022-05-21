@@ -61,14 +61,14 @@ def font(size: int, weight: str = None):
     return ImageFont.truetype({}.get(weight, 'fonts/Lobster.ttf'), size)
 
 
-async def width(text: str, size: int, weight: str = None):
+def width(text: str, size: int, weight: str = None):
     emojis = emoji.emoji_list(text)
     emoji_size = size + (size * 0.4)
     text = emoji.replace_emoji(text, replace='') if emojis else text
     return FreeTypeFont.getbbox(font(size, weight), text)[2] + int(emoji_size + emoji_size * 0.11) * len(emojis)
 
 
-async def min_height(text: str, size: int, weight: str = None):
+def min_height(text: str, size: int, weight: str = None):
     letter_heights = [FreeTypeFont.getbbox(font(size, weight), i, anchor='lt')[3] for i in list(text)]
     descender_heights = [FreeTypeFont.getbbox(font(size, weight), i, anchor='ls')[3] for i in list(text)]
     result = [element1 - element2 for (element1, element2) in zip(letter_heights, descender_heights)]
@@ -77,7 +77,7 @@ async def min_height(text: str, size: int, weight: str = None):
     return median_function(result) if result else 0
 
 
-async def height(text: str, size: int, weight: str = None):
+def height(text: str, size: int, weight: str = None):
     emoji_size = size + (size * 0.4)
     response = int(emoji_size - emoji_size * 0.22) if emoji.emoji_list(text) else None
     if response is None:
@@ -138,11 +138,11 @@ async def sender(message=None, user=None, text=None, log_text=None, **a_kwargs):
     return response
 
 
-async def image(text: str, background: Union[Image.open, Image.new] = None,
-                background_color: tuple[int, int, int] = (256, 256, 256),
-                font_weight: str = 'condensed', text_align: str = 'center',
-                font_size: int = 300, original_width: int = 1000, original_height: int = 1000,
-                left_indent: int = 50, top_indent: int = 50, left_indent_2: int = 0, top_indent_2: int = 0):
+def image(text: str, background: Union[Image.open, Image.new] = None,
+          background_color: tuple[int, int, int] = (256, 256, 256),
+          font_weight: str = 'condensed', text_align: str = 'center',
+          font_size: int = 300, original_width: int = 1000, original_height: int = 1000,
+          left_indent: int = 50, top_indent: int = 50, left_indent_2: int = 0, top_indent_2: int = 0):
     db = SQL('db/emoji.db')
     mask, spacing, response, coefficient, modal_height = None, 0, '', 0.6, 0
     original_width = background.getbbox()[2] if background and original_width == 1000 else original_width
@@ -163,17 +163,17 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
                 color, line = (47, 224, 39), line.strip('++')
             if line:
                 for word in re.sub(r'\s+', ' ', line).strip().split(' '):
-                    if await width(word, font_size, line_font) > original_width:
+                    if width(word, font_size, line_font) > original_width:
                         skip = True
                         break
-                    if await width(' '.join(layer_array + [word]), font_size, line_font) > original_width:
-                        heights.append(await height(' '.join(layer_array), font_size, line_font))
+                    if width(' '.join(layer_array + [word]), font_size, line_font) > original_width:
+                        heights.append(height(' '.join(layer_array), font_size, line_font))
                         colors.append(color), fonts.append(line_font), layers.append(' '.join(layer_array))
                         layer_array = [word]
                     else:
                         layer_array.append(word)
                 else:
-                    heights.append(await height(' '.join(layer_array), font_size, line_font))
+                    heights.append(height(' '.join(layer_array), font_size, line_font))
                     colors.append(color), fonts.append(line_font), layers.append(' '.join(layer_array))
             else:
                 layers.append(''), heights.append(0), colors.append(color), fonts.append(line_font)
@@ -184,10 +184,10 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
 
         draw = copy(ImageDraw.Draw(mask))
         layers_count = len(layers) - 1 if len(layers) > 1 else 1
-        full_height = heights[0] - await min_height(layers[0], font_size, fonts[0])
+        full_height = heights[0] - min_height(layers[0], font_size, fonts[0])
         aligner, emoji_size, additional_height = 0, font_size + (font_size * 0.4), 0
         modal_height = max(heights) if emoji.emoji_list(text) else median_function(heights)
-        full_height += sum([await min_height(layers[i], font_size, fonts[i]) for i in range(0, len(layers))])
+        full_height += sum([min_height(layers[i], font_size, fonts[i]) for i in range(0, len(layers))])
         spacing = (original_height - full_height) // layers_count
         if spacing > modal_height * coefficient:
             spacing = modal_height * coefficient
@@ -195,17 +195,17 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
         for i in range(0, len(layers)):
             left = left_indent + left_indent_2
             emojis = [e['emoji'] for e in emoji.emoji_list(layers[i])]
-            modded = (heights[i] - await min_height(layers[i], font_size, fonts[i]))
+            modded = (heights[i] - min_height(layers[i], font_size, fonts[i]))
             modded = modded if i != 0 or (i == 0 and layers_count == 0) else 0
             top = top_indent + top_indent_2 + aligner + additional_height - modded
             chunks = [re.sub('&#124;', '|', i) for i in emoji.replace_emoji(layers[i], replace='|').split('|')]
-            left += (original_width - await width(layers[i], font_size, fonts[i])) // 2 if text_align == 'center' else 0
+            left += (original_width - width(layers[i], font_size, fonts[i])) // 2 if text_align == 'center' else 0
             additional_height += heights[i] - modded + spacing
 
             for c in range(0, len(chunks)):
-                chunk_width = await width(chunks[c], font_size, fonts[i])
+                chunk_width = width(chunks[c], font_size, fonts[i])
                 emoji_scale = (left + chunk_width + int(emoji_size * 0.055), int(top))
-                text_scale = (left, top + heights[i] - await height(chunks[c], font_size, fonts[i]))
+                text_scale = (left, top + heights[i] - height(chunks[c], font_size, fonts[i]))
                 draw.text(text_scale, chunks[c], colors[i], font(font_size, fonts[i]), anchor='lt')
                 if c < len(emojis):
                     emoji_record = db.get_emoji(emojis[c])
@@ -264,7 +264,28 @@ def iter_post(user: SQL.get_row, message_text: str = None):
     return user, text, update, re.sub('<.*?>', '', str(message_text))
 
 
-async def post(db: SQL, user: SQL.get_row, message_text: str = None):
+def image_generator(user: SQL.get_row):
+    try:
+        db = SQL(db_path)
+        background = Image.open('background.jpg')
+        user['pic'] = image(f"{user['sport']}, начало в {user['time']}\n"
+                            f"матч {user['teams']}\n"
+                            f"++Прогноз: {user['predict']}++\n"
+                            f"КФ: {user['rate']}",
+                            original_width=background.getbbox()[2],
+                            original_height=background.getbbox()[3],
+                            background=background, font_weight='lobster',
+                            font_size=200, left_indent=200, top_indent=200)
+        _, text, _, _ = iter_post(user)
+        db.update('users', user['id'], {'gen': None, 'pic': user['pic']})
+        Auth.bot.send_message(user['id'], text=text, parse_mode='HTML',
+                              reply_markup=Keys(thread=True).final(user['pic']))
+        db.close()
+    except IndexError and Exception:
+        Auth.dev.thread_except()
+
+
+def post(db: SQL, user: SQL.get_row, message_text: str = None):
     keys, action, action_alert = Keys(), None, None
     user, text, update, _ = iter_post(user, message_text)
     keyboard = keys.post(user['pic'])
@@ -288,21 +309,11 @@ async def post(db: SQL, user: SQL.get_row, message_text: str = None):
                 update.update({'status': key}) if action and user['status'] != key else None
                 break
         else:
-            if user['pic'] is None:
-                background = Image.open('background.jpg')
-                db.update('users', user['id'], {'gen': 'GEN'})
-                user['pic'] = await image(f"{user['sport']}, начало в {user['time']}\n"
-                                          f"матч {user['teams']}\n"
-                                          f"++Прогноз: {user['predict']}++\n"
-                                          f"КФ: {user['rate']}",
-                                          original_width=background.getbbox()[2],
-                                          original_height=background.getbbox()[3],
-                                          background=background, font_weight='lobster',
-                                          font_size=200, left_indent=200, top_indent=200)
-                update.update({'gen': None, 'pic': user['pic']})
-                db.update('users', user['id'], update) if update else None
-                user, text, update, _ = iter_post(user)
             action, keyboard = None, keys.final(user['pic'])
+            if user['pic'] is None:
+                db.update('users', user['id'], {'gen': 'GEN'})
+                _thread.start_new_thread(image_generator, (user,))
+                text, keyboard = bold('Идёт создание картинки. Подожди.'), None
 
     db.update('users', user['id'], update) if update else None
     action = f"{action_alert}\n\n{action}" if action_alert and action else action
@@ -338,7 +349,7 @@ async def red_messages(message: types.Message):
                     uploaded = upload.upload_file(pic)
                     user['pic'] = f"https://telegra.ph{uploaded[0]}"
                     db.update('users', user['id'], {'status': None, 'pic': user['pic']})
-                    text, action, keyboard = await post(db, user)
+                    text, action, keyboard = post(db, user)
                 except IndexError and Exception:
                     text, action = bold('⚠ Что-то пошло не так, попробуйте снова'), None
 
@@ -366,17 +377,17 @@ async def callbacks(call):
             if call['data'] == 'cancel':
                 user = await clear_user(db, user)
                 send_text = bold('Параметры сброшены')
-                edit_text, _, edit_keys = await post(db, user)
+                edit_text, _, edit_keys = post(db, user)
 
             elif call['data'].startswith('title'):
                 user['title'] = re.sub('title_', '', call['data'], 1)
                 db.update('users', user['id'], {'title': user['title']})
-                edit_text, send_text, edit_keys = await post(db, user)
+                edit_text, send_text, edit_keys = post(db, user)
 
             elif call['data'].startswith('sport'):
                 user['sport'] = re.sub('sport_', '', call['data'], 1)
                 db.update('users', user['id'], {'sport': user['sport']})
-                edit_text, send_text, edit_keys = await post(db, user)
+                edit_text, send_text, edit_keys = post(db, user)
 
             elif call['data'].startswith('picture'):
                 if 'remove' not in call['data']:
@@ -386,7 +397,7 @@ async def callbacks(call):
                     user['pic'] = 'removed'
                     db.update('users', user['id'], {'pic': user['pic']})
                     edit_text, edit_keys = bold('Изображение удалено'), None
-                    send_text, _, send_keys = await post(db, user)
+                    send_text, _, send_keys = post(db, user)
 
             elif call['data'] == 'back':
                 send_text = bold('⚠ Что-то пошло не так, попробуйте снова')
@@ -394,12 +405,12 @@ async def callbacks(call):
                     if user[key]:
                         user[key], user['pic'] = None, None
                         db.update('users', user['id'], {'pic': None, key: None})
-                        edit_text, send_text, edit_keys = await post(db, user)
+                        edit_text, send_text, edit_keys = post(db, user)
                         break
 
             elif call['data'] == 'publish':
                 await clear_user(db, user)
-                edit_text, send_text, edit_keys = await post(db, user)
+                edit_text, send_text, edit_keys = post(db, user)
                 if edit_keys == Keys().final(user['pic']):
                     try:
                         channel_post = await sender(text=edit_text, id=os.environ['ID_CHANNEL'])
@@ -467,7 +478,7 @@ async def repeat_all_messages(message: types.Message):
                     elif message['text'].lower().startswith('/post'):
                         if user['gen'] is None:
                             update = False
-                            text, action, keyboard = await post(db, user)
+                            text, action, keyboard = post(db, user)
                             if action:
                                 await sender(message, user, text=text, keyboard=keyboard, log_text=None)
                                 text, keyboard = action, None
@@ -479,7 +490,7 @@ async def repeat_all_messages(message: types.Message):
             if db.is_user_admin(user['id']):
                 if user['status'] in ['sport', 'time', 'teams', 'about', 'predict', 'rate']:
                     if user['gen'] is None:
-                        text, action, keyboard = await post(db, user, message['text'])
+                        text, action, keyboard = post(db, user, message['text'])
                         if action:
                             await sender(message, user, text=text, keyboard=keyboard, log_text=None)
                             text, keyboard = action, None
