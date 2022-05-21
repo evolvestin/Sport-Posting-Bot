@@ -138,11 +138,11 @@ async def sender(message=None, user=None, text=None, log_text=None, **a_kwargs):
     return response
 
 
-def image(text: str, background: Union[Image.open, Image.new] = None,
-          background_color: tuple[int, int, int] = (256, 256, 256),
-          font_weight: str = 'condensed', text_align: str = 'center',
-          font_size: int = 300, original_width: int = 1000, original_height: int = 1000,
-          left_indent: int = 50, top_indent: int = 50, left_indent_2: int = 0, top_indent_2: int = 0):
+async def image(text: str, background: Union[Image.open, Image.new] = None,
+                background_color: tuple[int, int, int] = (256, 256, 256),
+                font_weight: str = 'condensed', text_align: str = 'center',
+                font_size: int = 300, original_width: int = 1000, original_height: int = 1000,
+                left_indent: int = 50, top_indent: int = 50, left_indent_2: int = 0, top_indent_2: int = 0):
     db = SQL('db/emoji.db')
     mask, spacing, response, coefficient, modal_height = None, 0, '', 0.6, 0
     original_width = background.getbbox()[2] if background and original_width == 1000 else original_width
@@ -290,14 +290,14 @@ async def post(db: SQL, user: SQL.get_row, message_text: str = None):
             if user['pic'] is None:
                 background = Image.open('background.jpg')
                 db.update('users', user['id'], {'gen': 'GEN'})
-                user['pic'] = image(f"{user['sport']}, начало в {user['time']}\n"
-                                    f"матч {user['teams']}\n"
-                                    f"++Прогноз: {user['predict']}++\n"
-                                    f"КФ: {user['rate']}",
-                                    original_width=background.getbbox()[2],
-                                    original_height=background.getbbox()[3],
-                                    background=background, font_weight='lobster',
-                                    font_size=200, left_indent=200, top_indent=200)
+                user['pic'] = await image(f"{user['sport']}, начало в {user['time']}\n"
+                                          f"матч {user['teams']}\n"
+                                          f"++Прогноз: {user['predict']}++\n"
+                                          f"КФ: {user['rate']}",
+                                          original_width=background.getbbox()[2],
+                                          original_height=background.getbbox()[3],
+                                          background=background, font_weight='lobster',
+                                          font_size=200, left_indent=200, top_indent=200)
                 update.update({'gen': None, 'pic': user['pic']})
                 db.update('users', user['id'], update) if update else None
                 user, text, update, _ = iter_post(user)
