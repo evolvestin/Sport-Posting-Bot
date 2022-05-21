@@ -220,6 +220,7 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
                         mask.paste(foreground, emoji_scale)
                 left += chunk_width + int(emoji_size + emoji_size * 0.11)
         font_size -= 1
+        print(font_size)
     db.close()
     if mask:
         background.paste(mask, (0, 0), mask)
