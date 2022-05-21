@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import emoji
@@ -263,7 +264,7 @@ def iter_post(user: SQL.get_row, message_text: str = None):
     return user, text, update, re.sub('<.*?>', '', str(message_text))
 
 
-def post(db: SQL, user: SQL.get_row, message_text: str = None):
+async def post(db: SQL, user: SQL.get_row, message_text: str = None):
     keys, action, action_alert = Keys(), None, None
     user, text, update, _ = iter_post(user, message_text)
     keyboard = keys.post(user['pic'])
@@ -289,6 +290,7 @@ def post(db: SQL, user: SQL.get_row, message_text: str = None):
         else:
             if user['pic'] is None:
                 background = Image.open('background.jpg')
+                db.update('users', user['id'], {'gen': 'GEN'})
                 user['pic'] = image(f"{user['sport']}, начало в {user['time']}\n"
                                     f"матч {user['teams']}\n"
                                     f"++Прогноз: {user['predict']}++\n"
@@ -297,7 +299,7 @@ def post(db: SQL, user: SQL.get_row, message_text: str = None):
                                     original_height=background.getbbox()[3],
                                     background=background, font_weight='lobster',
                                     font_size=200, left_indent=200, top_indent=200)
-                update.update({'pic': user['pic']})
+                update.update({'gen': None, 'pic': user['pic']})
                 db.update('users', user['id'], update) if update else None
                 user, text, update, _ = iter_post(user)
             action, keyboard = None, keys.final(user['pic'])
@@ -330,13 +332,13 @@ async def red_messages(message: types.Message):
         if str(message['chat']['id']) not in black_list:
             db = SQL(db_path)
             text, user, keyboard = None, db.get_row(message['chat']['id']), None
-            if message['photo'] and user['admin'] == '🟢' and user['status'] == 'pic':
+            if message['photo'] and user['admin'] == '🟢' and user['status'] == 'pic' and user['gen'] is None:
                 try:
                     pic = await bot.download_file_by_id(message['photo'][len(message['photo']) - 1]['file_id'])
                     uploaded = upload.upload_file(pic)
                     user['pic'] = f"https://telegra.ph{uploaded[0]}"
                     db.update('users', user['id'], {'status': None, 'pic': user['pic']})
-                    text, action, keyboard = post(db, user)
+                    text, action, keyboard = await post(db, user)
                 except IndexError and Exception:
                     text, action = bold('⚠ Что-то пошло не так, попробуйте снова'), None
 
@@ -357,24 +359,24 @@ async def callbacks(call):
     try:
         db = SQL(db_path)
         user = db.get_row(call['message']['chat']['id'])
-        if user and user['admin'] == '🟢':
+        if user and user['admin'] == '🟢' and user['gen'] is None:
             edit_keys = call['message']['reply_markup']
             edit_text, log_text, send_text, send_keys = None, '', None, None
 
             if call['data'] == 'cancel':
                 user = await clear_user(db, user)
                 send_text = bold('Параметры сброшены')
-                edit_text, _, edit_keys = post(db, user)
+                edit_text, _, edit_keys = await post(db, user)
 
             elif call['data'].startswith('title'):
                 user['title'] = re.sub('title_', '', call['data'], 1)
                 db.update('users', user['id'], {'title': user['title']})
-                edit_text, send_text, edit_keys = post(db, user)
+                edit_text, send_text, edit_keys = await post(db, user)
 
             elif call['data'].startswith('sport'):
                 user['sport'] = re.sub('sport_', '', call['data'], 1)
                 db.update('users', user['id'], {'sport': user['sport']})
-                edit_text, send_text, edit_keys = post(db, user)
+                edit_text, send_text, edit_keys = await post(db, user)
 
             elif call['data'].startswith('picture'):
                 if 'remove' not in call['data']:
@@ -384,7 +386,7 @@ async def callbacks(call):
                     user['pic'] = 'removed'
                     db.update('users', user['id'], {'pic': user['pic']})
                     edit_text, edit_keys = bold('Изображение удалено'), None
-                    send_text, _, send_keys = post(db, user)
+                    send_text, _, send_keys = await post(db, user)
 
             elif call['data'] == 'back':
                 send_text = bold('⚠ Что-то пошло не так, попробуйте снова')
@@ -392,12 +394,12 @@ async def callbacks(call):
                     if user[key]:
                         user[key], user['pic'] = None, None
                         db.update('users', user['id'], {'pic': None, key: None})
-                        edit_text, send_text, edit_keys = post(db, user)
+                        edit_text, send_text, edit_keys = await post(db, user)
                         break
 
             elif call['data'] == 'publish':
                 await clear_user(db, user)
-                edit_text, send_text, edit_keys = post(db, user)
+                edit_text, send_text, edit_keys = await post(db, user)
                 if edit_keys == Keys().final(user['pic']):
                     try:
                         channel_post = await sender(text=edit_text, id=os.environ['ID_CHANNEL'])
@@ -413,6 +415,9 @@ async def callbacks(call):
 
             await editor(call, user, text=edit_text, keyboard=edit_keys, log_text=log_text)
             await sender(call['message'], user, send_text, keyboard=send_keys)
+
+        elif user and user['gen']:
+            await bot.answer_callback_query(call['id'], text='ПОДОЖДИ')
         db.close()
     except IndexError and Exception:
         await Auth.dev.async_except(call)
@@ -460,20 +465,26 @@ async def repeat_all_messages(message: types.Message):
                         text, log_text = Auth.logs.reboot(dispatcher)
 
                     elif message['text'].lower().startswith('/post'):
-                        update = False
-                        text, action, keyboard = post(db, user)
-                        if action:
-                            await sender(message, user, text=text, keyboard=keyboard, log_text=None)
-                            text, keyboard = action, None
+                        if user['gen'] is None:
+                            update = False
+                            text, action, keyboard = await post(db, user)
+                            if action:
+                                await sender(message, user, text=text, keyboard=keyboard, log_text=None)
+                                text, keyboard = action, None
+                        else:
+                            text = bold('Идёт создание картинки. Подожди.')
             if update:
                 db.update('users', user['id'], {'status': None}) if user['status'] else None
         else:
             if db.is_user_admin(user['id']):
                 if user['status'] in ['sport', 'time', 'teams', 'about', 'predict', 'rate']:
-                    text, action, keyboard = post(db, user, message['text'])
-                    if action:
-                        await sender(message, user, text=text, keyboard=keyboard, log_text=None)
-                        text, keyboard = action, None
+                    if user['gen'] is None:
+                        text, action, keyboard = await post(db, user, message['text'])
+                        if action:
+                            await sender(message, user, text=text, keyboard=keyboard, log_text=None)
+                            text, keyboard = action, None
+                    else:
+                        text = bold('Идёт создание картинки. Подожди.')
 
         log_text = ' [#Впервые]' if is_first_start else log_text
         await sender(message, user, text=text, keyboard=keyboard, log_text=log_text)
