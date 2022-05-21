@@ -63,7 +63,6 @@ class SQL:
     def update(self, table: str, item_id: Union[int, str], record: dict, google_update=None):
         if table == 'users' and google_update is None:
             record.update({'last_update': time_now(), 'updates': ['updates + 1']})
-        print(f"UPDATE {table} SET {self.upd(record)} WHERE id = '{item_id}'")
         self.request(f"UPDATE {table} SET {self.upd(record)} WHERE id = '{item_id}'") if record else None
 
     def request(self, sql, fetchone=None):
@@ -143,6 +142,10 @@ class SQL:
     def get_expired(self, now: datetime):
         return self.request(f'SELECT * FROM users WHERE post_id IS NOT NULL AND '
                             f'ended IS NULL AND {int(now.timestamp())} > start_time')
+
+    def get_emoji(self, emoji):
+        query = f"SELECT data FROM emoji WHERE emoji LIKE '{emoji}%' ORDER BY length(emoji)"
+        return self.request(query, fetchone=True)
 
     def is_user_admin(self, user_id: Union[int, str]):
         result = self.request(f"SELECT admin FROM users WHERE id = '{user_id}'", fetchone=True)

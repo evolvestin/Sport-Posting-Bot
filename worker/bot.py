@@ -1,17 +1,24 @@
 import os
 import re
+import emoji
+import base64
 import gspread
 import _thread
 import functions
-import keyboards
 from SQL import SQL
+from io import BytesIO
 from time import sleep
+from typing import Union
 from aiogram import types
 from telegraph import upload
 from copy import copy, deepcopy
+from keyboards import Keys, sport
 from aiogram.utils import executor
 from string import ascii_uppercase
+from PIL.ImageFont import FreeTypeFont
 from aiogram.dispatcher import Dispatcher
+from PIL import Image, ImageFont, ImageDraw
+from statistics import median as median_function
 from datetime import datetime, timezone, timedelta
 from functions import code, bold, time_now, html_secure
 # =================================================================================================================
@@ -45,7 +52,38 @@ bot, dispatcher = Auth.async_bot, Dispatcher(Auth.async_bot)
 zero_user, google_users_ids, users_columns = users_db_creation('users')
 black_list = [os.environ.get(key, '') for key in ['ID_DUMP', 'ID_LOGS', 'ID_MEDIA', 'ID_FORWARD']]
 black_list.extend(os.environ.get('black_list', '').split(' '))
+key_action = [('title', None), ('sport', None), ('time', 'Время игры:'),
+              ('teams', 'Кто играет:'), ('about', 'Описание:'), ('predict', 'Прогноз:'), ('rate', 'КФ:')]
 # =================================================================================================================
+
+
+def font(size: int, weight: str = None):
+    return ImageFont.truetype({}.get(weight, 'fonts/Lobster.ttf'), size)
+
+
+def width(text: str, size: int, weight: str = None):
+    emojis = emoji.emoji_list(text)
+    emoji_size = size + (size * 0.4)
+    text = emoji.replace_emoji(text, replace='') if emojis else text
+    return FreeTypeFont.getbbox(font(size, weight), text)[2] + int(emoji_size + emoji_size * 0.11) * len(emojis)
+
+
+def min_height(text: str, size: int, weight: str = None):
+    letter_heights = [FreeTypeFont.getbbox(font(size, weight), i, anchor='lt')[3] for i in list(text)]
+    descender_heights = [FreeTypeFont.getbbox(font(size, weight), i, anchor='ls')[3] for i in list(text)]
+    result = [element1 - element2 for (element1, element2) in zip(letter_heights, descender_heights)]
+    if emoji.emoji_list(text):
+        return max(result)
+    return median_function(result) if result else 0
+
+
+def height(text: str, size: int, weight: str = None):
+    emoji_size = size + (size * 0.4)
+    response = int(emoji_size - emoji_size * 0.22) if emoji.emoji_list(text) else None
+    if response is None:
+        result = [FreeTypeFont.getbbox(font(size, weight), text, anchor=anchor)[3] for anchor in ['lt', 'ls']]
+        response = result[0] - result[1]
+    return response
 
 
 async def clear_user(db: SQL, user: SQL.get_row):
@@ -100,8 +138,101 @@ async def sender(message=None, user=None, text=None, log_text=None, **a_kwargs):
     return response
 
 
+def image(text: str, background: Union[Image.open, Image.new] = None,
+          background_color: tuple[int, int, int] = (256, 256, 256),
+          font_weight: str = 'condensed', text_align: str = 'center',
+          font_size: int = 300, original_width: int = 1000, original_height: int = 1000,
+          left_indent: int = 50, top_indent: int = 50, left_indent_2: int = 0, top_indent_2: int = 0):
+    db = SQL('db/emoji.db')
+    mask, spacing, response, coefficient, modal_height = None, 0, '', 0.6, 0
+    original_width = background.getbbox()[2] if background and original_width == 1000 else original_width
+    original_height = background.getbbox()[3] if background and original_height == 1000 else original_height
+    original_scale = (original_width, original_height)
+    original_height -= top_indent * 2 + top_indent_2
+    original_width -= left_indent * 2 + left_indent_2
+    font_size = font_size if font_size != 300 else original_width // 3
+    background = copy(background) or Image.new('RGB', original_scale, background_color)
+    while spacing < modal_height * coefficient or spacing == 0:
+        mask = Image.new('RGBA', original_scale, (0, 0, 0, 0))
+        skip, fonts, colors, layers, heights = False, [], [], [], []
+        for line in text.strip().split('\n'):
+            color, line_font, layer_array = (256, 256, 256), font_weight, []
+            if line.startswith('**') and line.endswith('**'):
+                line_font, line = 'bold', line.strip('**')
+            if line.startswith('++') and line.endswith('++'):
+                color, line = (47, 224, 39), line.strip('++')
+            if line:
+                for word in re.sub(r'\s+', ' ', line).strip().split(' '):
+                    if width(word, font_size, line_font) > original_width:
+                        skip = True
+                        break
+                    if width(' '.join(layer_array + [word]), font_size, line_font) > original_width:
+                        heights.append(height(' '.join(layer_array), font_size, line_font))
+                        colors.append(color), fonts.append(line_font), layers.append(' '.join(layer_array))
+                        layer_array = [word]
+                    else:
+                        layer_array.append(word)
+                else:
+                    heights.append(height(' '.join(layer_array), font_size, line_font))
+                    colors.append(color), fonts.append(line_font), layers.append(' '.join(layer_array))
+            else:
+                layers.append(''), heights.append(0), colors.append(color), fonts.append(line_font)
+
+        if skip:
+            font_size -= 1
+            continue
+
+        draw = copy(ImageDraw.Draw(mask))
+        layers_count = len(layers) - 1 if len(layers) > 1 else 1
+        full_height = heights[0] - min_height(layers[0], font_size, fonts[0])
+        aligner, emoji_size, additional_height = 0, font_size + (font_size * 0.4), 0
+        modal_height = max(heights) if emoji.emoji_list(text) else median_function(heights)
+        full_height += sum([min_height(layers[i], font_size, fonts[i]) for i in range(0, len(layers))])
+        spacing = (original_height - full_height) // layers_count
+        if spacing > modal_height * coefficient:
+            spacing = modal_height * coefficient
+            aligner = (original_height - full_height - (spacing if len(layers) > 1 else 0) * layers_count) // 2
+        for i in range(0, len(layers)):
+            left = left_indent + left_indent_2
+            emojis = [e['emoji'] for e in emoji.emoji_list(layers[i])]
+            modded = (heights[i] - min_height(layers[i], font_size, fonts[i]))
+            modded = modded if i != 0 or (i == 0 and layers_count == 0) else 0
+            top = top_indent + top_indent_2 + aligner + additional_height - modded
+            chunks = [re.sub('&#124;', '|', i) for i in emoji.replace_emoji(layers[i], replace='|').split('|')]
+            left += (original_width - width(layers[i], font_size, fonts[i])) // 2 if text_align == 'center' else 0
+            additional_height += heights[i] - modded + spacing
+
+            for c in range(0, len(chunks)):
+                chunk_width = width(chunks[c], font_size, fonts[i])
+                emoji_scale = (left + chunk_width + int(emoji_size * 0.055), int(top))
+                text_scale = (left, top + heights[i] - height(chunks[c], font_size, fonts[i]))
+                draw.text(text_scale, chunks[c], colors[i], font(font_size, fonts[i]), anchor='lt')
+                if c < len(emojis):
+                    emoji_record = db.get_emoji(emojis[c])
+                    if emoji_record:
+                        emoji_image = BytesIO(base64.b64decode(emoji_record['data']))
+                        foreground = Image.open(emoji_image).resize((int(emoji_size), int(emoji_size)), 3)
+                    else:
+                        foreground = Image.new('RGBA', (int(emoji_size), int(emoji_size)), (0, 0, 0, 1000))
+                    try:
+                        mask.paste(foreground, emoji_scale, foreground)
+                    except IndexError and Exception:
+                        mask.paste(foreground, emoji_scale)
+                left += chunk_width + int(emoji_size + emoji_size * 0.11)
+        font_size -= 1
+    db.close()
+    if mask:
+        background.paste(mask, (0, 0), mask)
+        background.save('image.jpg')
+        doc = open('image.jpg', 'rb')
+        response = f'https://telegra.ph{upload.upload_file(doc)[0]}'
+        doc.close()
+        os.remove('image.jpg')
+    return response
+
+
 def iter_post(user: SQL.get_row, message_text: str = None):
-    update = {}
+    text, update = '', {}
     if user['status'] is not None and message_text:
         if user['status'] in ['sport', 'time', 'teams', 'predict', 'rate']:
             message_text = re.sub(r'\n+|\s+|_+', ' ', html_secure(message_text)).strip()
@@ -118,9 +249,11 @@ def iter_post(user: SQL.get_row, message_text: str = None):
         user[user['status']] = message_text
         update = {'status': None, user['status']: user[user['status']]}
 
-    text = f"{functions.html_link(user['pic'], '​​')}️" if user['pic'] else ''
+    if user['pic'] and user['pic'] != 'removed':
+        text += f"{functions.html_link(user['pic'], '​​')}️"
     text += f"🔥{bold(user['title'])}🔥" if user['title'] else 'Создание нового поста'
-    text += f"\n\n⚽ {bold(user['sport'])} ⚽" if user['sport'] else ''
+    if user['sport']:
+        text += f"\n\n{sport.get(user['sport'])} {bold(user['sport'])} {sport.get(user['sport'])}"
     text += f"\n\n🕐 {bold(user['time'])}" if user['time'] else ''
     text += f"\n\n{bold(user['teams'])}" if user['teams'] else ''
     if user['about']:
@@ -131,9 +264,15 @@ def iter_post(user: SQL.get_row, message_text: str = None):
 
 
 def post(db: SQL, user: SQL.get_row, message_text: str = None):
+    keys, action, action_alert = Keys(), None, None
     user, text, update, _ = iter_post(user, message_text)
-    keys, action, action_alert = keyboards.Keys(), None, None
-    keyboard = keys.post(user['pic']) if user['title'] else keys.bet()
+    keyboard = keys.post(user['pic'])
+    for key, _ in key_action:
+        if user[key] is None:
+            if key in ['title', 'sport']:
+                keyboard = keys.bet() if key == 'title' else keys.sport()
+            break
+
     if user['status'] is not None and message_text:
         if len(re.sub('<.*?>', '', text)) > 4096:
             user[user['status']] = None
@@ -141,13 +280,26 @@ def post(db: SQL, user: SQL.get_row, message_text: str = None):
             action_alert = bold('⚠ Превышена максимальная длина поста')
 
     if user['title']:
-        for key, action in [('sport', 'Какой спорт:'), ('time', 'Время игры:'), ('teams', 'Кто играет:'),
-                            ('about', 'Описание:'), ('predict', 'Прогноз:'), ('rate', 'КФ:')]:
-            action += f"\n\n{bold('нет')} — если нужно не выводить текст" if key == 'about' else ''
+        for key, action in key_action:
+            if action:
+                action += f"\n\n{bold('нет')} — если нужно не выводить текст" if key == 'about' else ''
             if user[key] is None:
-                update.update({'status': key}) if user['status'] != key else None
+                update.update({'status': key}) if action and user['status'] != key else None
                 break
         else:
+            if user['pic'] is None:
+                background = Image.open('background.jpg')
+                user['pic'] = image(f"{user['sport']}, начало в {user['time']}\n"
+                                    f"матч {user['teams']}\n"
+                                    f"++Прогноз: {user['predict']}++\n"
+                                    f"КФ: {user['rate']}",
+                                    original_width=background.getbbox()[2],
+                                    original_height=background.getbbox()[3],
+                                    background=background, font_weight='lobster',
+                                    font_size=200, left_indent=200, top_indent=200)
+                update.update({'pic': user['pic']})
+                db.update('users', user['id'], update) if update else None
+                user, text, update, _ = iter_post(user)
             action, keyboard = None, keys.final(user['pic'])
 
     db.update('users', user['id'], update) if update else None
@@ -219,19 +371,34 @@ async def callbacks(call):
                 db.update('users', user['id'], {'title': user['title']})
                 edit_text, send_text, edit_keys = post(db, user)
 
+            elif call['data'].startswith('sport'):
+                user['sport'] = re.sub('sport_', '', call['data'], 1)
+                db.update('users', user['id'], {'sport': user['sport']})
+                edit_text, send_text, edit_keys = post(db, user)
+
             elif call['data'].startswith('picture'):
                 if 'remove' not in call['data']:
                     send_text = 'Пришлите изображение:'
                     db.update('users', user['id'], {'status': 'pic'})
                 else:
-                    user['pic'] = None
-                    db.update('users', user['id'], {'pic': None})
-                    edit_text, send_text, edit_keys = post(db, user)
+                    user['pic'] = 'removed'
+                    db.update('users', user['id'], {'pic': user['pic']})
+                    edit_text, edit_keys = bold('Изображение удалено'), None
+                    send_text, _, send_keys = post(db, user)
+
+            elif call['data'] == 'back':
+                send_text = bold('⚠ Что-то пошло не так, попробуйте снова')
+                for key, action in reversed(key_action):
+                    if user[key]:
+                        user[key], user['pic'] = None, None
+                        db.update('users', user['id'], {'pic': None, key: None})
+                        edit_text, send_text, edit_keys = post(db, user)
+                        break
 
             elif call['data'] == 'publish':
                 await clear_user(db, user)
                 edit_text, send_text, edit_keys = post(db, user)
-                if edit_keys == keyboards.Keys().final(user['pic']):
+                if edit_keys == Keys().final(user['pic']):
                     try:
                         channel_post = await sender(text=edit_text, id=os.environ['ID_CHANNEL'])
                         if channel_post['chat']['username']:
