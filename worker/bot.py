@@ -61,14 +61,14 @@ def font(size: int, weight: str = None):
     return ImageFont.truetype({}.get(weight, 'fonts/Lobster.ttf'), size)
 
 
-def width(text: str, size: int, weight: str = None):
+async def width(text: str, size: int, weight: str = None):
     emojis = emoji.emoji_list(text)
     emoji_size = size + (size * 0.4)
     text = emoji.replace_emoji(text, replace='') if emojis else text
     return FreeTypeFont.getbbox(font(size, weight), text)[2] + int(emoji_size + emoji_size * 0.11) * len(emojis)
 
 
-def min_height(text: str, size: int, weight: str = None):
+async def min_height(text: str, size: int, weight: str = None):
     letter_heights = [FreeTypeFont.getbbox(font(size, weight), i, anchor='lt')[3] for i in list(text)]
     descender_heights = [FreeTypeFont.getbbox(font(size, weight), i, anchor='ls')[3] for i in list(text)]
     result = [element1 - element2 for (element1, element2) in zip(letter_heights, descender_heights)]
@@ -77,7 +77,7 @@ def min_height(text: str, size: int, weight: str = None):
     return median_function(result) if result else 0
 
 
-def height(text: str, size: int, weight: str = None):
+async def height(text: str, size: int, weight: str = None):
     emoji_size = size + (size * 0.4)
     response = int(emoji_size - emoji_size * 0.22) if emoji.emoji_list(text) else None
     if response is None:
@@ -163,17 +163,17 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
                 color, line = (47, 224, 39), line.strip('++')
             if line:
                 for word in re.sub(r'\s+', ' ', line).strip().split(' '):
-                    if width(word, font_size, line_font) > original_width:
+                    if await width(word, font_size, line_font) > original_width:
                         skip = True
                         break
-                    if width(' '.join(layer_array + [word]), font_size, line_font) > original_width:
-                        heights.append(height(' '.join(layer_array), font_size, line_font))
+                    if await width(' '.join(layer_array + [word]), font_size, line_font) > original_width:
+                        heights.append(await height(' '.join(layer_array), font_size, line_font))
                         colors.append(color), fonts.append(line_font), layers.append(' '.join(layer_array))
                         layer_array = [word]
                     else:
                         layer_array.append(word)
                 else:
-                    heights.append(height(' '.join(layer_array), font_size, line_font))
+                    heights.append(await height(' '.join(layer_array), font_size, line_font))
                     colors.append(color), fonts.append(line_font), layers.append(' '.join(layer_array))
             else:
                 layers.append(''), heights.append(0), colors.append(color), fonts.append(line_font)
@@ -184,10 +184,10 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
 
         draw = copy(ImageDraw.Draw(mask))
         layers_count = len(layers) - 1 if len(layers) > 1 else 1
-        full_height = heights[0] - min_height(layers[0], font_size, fonts[0])
+        full_height = heights[0] - await min_height(layers[0], font_size, fonts[0])
         aligner, emoji_size, additional_height = 0, font_size + (font_size * 0.4), 0
         modal_height = max(heights) if emoji.emoji_list(text) else median_function(heights)
-        full_height += sum([min_height(layers[i], font_size, fonts[i]) for i in range(0, len(layers))])
+        full_height += sum([await min_height(layers[i], font_size, fonts[i]) for i in range(0, len(layers))])
         spacing = (original_height - full_height) // layers_count
         if spacing > modal_height * coefficient:
             spacing = modal_height * coefficient
@@ -195,17 +195,17 @@ async def image(text: str, background: Union[Image.open, Image.new] = None,
         for i in range(0, len(layers)):
             left = left_indent + left_indent_2
             emojis = [e['emoji'] for e in emoji.emoji_list(layers[i])]
-            modded = (heights[i] - min_height(layers[i], font_size, fonts[i]))
+            modded = (heights[i] - await min_height(layers[i], font_size, fonts[i]))
             modded = modded if i != 0 or (i == 0 and layers_count == 0) else 0
             top = top_indent + top_indent_2 + aligner + additional_height - modded
             chunks = [re.sub('&#124;', '|', i) for i in emoji.replace_emoji(layers[i], replace='|').split('|')]
-            left += (original_width - width(layers[i], font_size, fonts[i])) // 2 if text_align == 'center' else 0
+            left += (original_width - await width(layers[i], font_size, fonts[i])) // 2 if text_align == 'center' else 0
             additional_height += heights[i] - modded + spacing
 
             for c in range(0, len(chunks)):
-                chunk_width = width(chunks[c], font_size, fonts[i])
+                chunk_width = await width(chunks[c], font_size, fonts[i])
                 emoji_scale = (left + chunk_width + int(emoji_size * 0.055), int(top))
-                text_scale = (left, top + heights[i] - height(chunks[c], font_size, fonts[i]))
+                text_scale = (left, top + heights[i] - await height(chunks[c], font_size, fonts[i]))
                 draw.text(text_scale, chunks[c], colors[i], font(font_size, fonts[i]), anchor='lt')
                 if c < len(emojis):
                     emoji_record = db.get_emoji(emojis[c])
