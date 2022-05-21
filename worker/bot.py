@@ -220,7 +220,6 @@ def image(text: str, background: Union[Image.open, Image.new] = None,
                         mask.paste(foreground, emoji_scale)
                 left += chunk_width + int(emoji_size + emoji_size * 0.11)
         font_size -= 1
-        print(font_size)
     db.close()
     if mask:
         background.paste(mask, (0, 0), mask)
@@ -266,8 +265,8 @@ def iter_post(user: SQL.get_row, message_text: str = None):
 
 def image_generator(user: SQL.get_row):
     try:
-        db = SQL(db_path)
-        background = Image.open('background.jpg')
+        stamp = datetime.now().timestamp()
+        db, background = SQL(db_path), Image.open('background.jpg')
         user['pic'] = image(f"{user['sport']}, начало в {user['time']}\n"
                             f"матч {user['teams']}\n"
                             f"++Прогноз: {user['predict']}++\n"
@@ -281,6 +280,11 @@ def image_generator(user: SQL.get_row):
         Auth.bot.send_message(user['id'], text=text, parse_mode='HTML',
                               reply_markup=Keys(thread=True).final(user['pic']))
         db.close()
+        try:
+            text = f"{functions.html_link(user['pic'], ' ')}За {datetime.now().timestamp() - stamp} сек."
+            Auth.bot.send_message(Auth.logs.media_chat_id, text, parse_mode='HTML')
+        except IndexError and Exception:
+            pass
     except IndexError and Exception:
         Auth.dev.thread_except()
 
