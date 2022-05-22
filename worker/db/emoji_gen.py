@@ -2,7 +2,7 @@ import os
 import sqlite3
 from time import sleep
 from pathlib import Path
-sleep(20)
+
 
 class SQL:
     def __init__(self, database):
@@ -39,23 +39,19 @@ def insert_items(record: dict):
     return ', '.join(values)
 
 
-def emoji_summary(folder_path):
-    all_values = []
-    for path in os.listdir(folder_path):
-        if path.startswith('emoji_set') and path.endswith('.db'):
-            emoji_db = SQL(folder_path.joinpath(path))
+def emoji_generation(path=Path(__file__).resolve().parent):
+    db = SQL(path.joinpath('emoji.db'))
+    db.request(f'CREATE TABLE IF NOT EXISTS emoji (key TEXT UNIQUE, emoji TEXT, data TEXT)')
+    for set_path in os.listdir(path):
+        if set_path.startswith('emoji_set') and set_path.endswith('.db'):
+            all_values = []
+            emoji_db = SQL(path.joinpath(set_path))
             records = emoji_db.request('SELECT * FROM emoji')
             for record in records:
                 all_values.append(f"({insert_items(record)})")
             emoji_db.close()
-    all_values.clear()
-    return all_values
-
-
-def emoji_generation(path=Path(__file__).resolve().parent):
-    db = SQL(path.joinpath('emoji.db'))
-    db.request(f'CREATE TABLE IF NOT EXISTS emoji (key TEXT UNIQUE, emoji TEXT, data TEXT)')
-    db.request(f"REPLACE INTO emoji (key, emoji, data) VALUES {', '.join(emoji_summary(path))}")
+            db.request(f"REPLACE INTO emoji (key, emoji, data) VALUES {', '.join(all_values)}")
+            all_values.clear()
     db.close()
     return path.joinpath('emoji.db')
 
