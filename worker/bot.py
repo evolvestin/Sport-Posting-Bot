@@ -483,8 +483,11 @@ async def repeat_all_messages(message: types.Message):
 
                     elif message['text'].lower().startswith('/pic'):
                         db.update('users', user['id'], {'gen': 'GEN'})
-                        text = bold('Идёт создание картинки. Подожди.')
-                        _thread.start_new_thread(image_generator, (user, message['text']))
+                        text = bold('❌ Пустое изображение. Попробуй снова.')
+                        image_text = re.sub('/[pP][iI][cC]', '', message['text'], 1).strip()
+                        if image_text:
+                            text = bold('Идёт создание картинки. Подожди.')
+                            _thread.start_new_thread(image_generator, (user, image_text))
 
                     elif message['text'].lower().startswith('/post'):
                         if user['gen'] is None:
