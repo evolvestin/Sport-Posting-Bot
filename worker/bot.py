@@ -15,6 +15,7 @@ from copy import copy, deepcopy
 from keyboards import Keys, sport
 from aiogram.utils import executor
 from string import ascii_uppercase
+from db.emoji_gen import emojis_path
 from PIL.ImageFont import FreeTypeFont
 from aiogram.dispatcher import Dispatcher
 from PIL import Image, ImageFont, ImageDraw
@@ -143,7 +144,7 @@ def image(text: str, background: Union[Image.open, Image.new] = None,
           font_weight: str = 'condensed', text_align: str = 'center',
           font_size: int = 300, original_width: int = 1000, original_height: int = 1000,
           left_indent: int = 50, top_indent: int = 50, left_indent_2: int = 0, top_indent_2: int = 0):
-    db = SQL('db/emoji.db')
+    db = SQL(emojis_path)
     mask, spacing, response, coefficient, modal_height = None, 0, '', 0.6, 0
     original_width = background.getbbox()[2] if background and original_width == 1000 else original_width
     original_height = background.getbbox()[3] if background and original_height == 1000 else original_height
@@ -263,14 +264,15 @@ def iter_post(user: SQL.get_row, message_text: str = None):
     return user, text, update, re.sub('<.*?>', '', str(message_text))
 
 
-def image_generator(user: SQL.get_row):
+def image_generator(user: SQL.get_row, image_text: str = None):
     try:
         stamp = datetime.now().timestamp()
         db, background = SQL(db_path), Image.open('background.jpg')
-        user['pic'] = image(f"{user['sport']}, начало в {user['time']}\n"
-                            f"матч {user['teams']}\n"
-                            f"++Прогноз: {user['predict']}++\n"
-                            f"КФ: {user['rate']}",
+        image_text = image_text or f"{user['sport']}, начало в {user['time']}\n" \
+                                   f"матч {user['teams']}\n" \
+                                   f"++Прогноз: {user['predict']}++\n" \
+                                   f"КФ: {user['rate']}"
+        user['pic'] = image(image_text,
                             original_width=background.getbbox()[2],
                             original_height=background.getbbox()[3],
                             background=background, font_weight='lobster',
@@ -478,6 +480,11 @@ async def repeat_all_messages(message: types.Message):
 
                     elif message['text'].lower().startswith('/reboot'):
                         text, log_text = Auth.logs.reboot(dispatcher)
+
+                    elif message['text'].lower().startswith('/pic'):
+                        db.update('users', user['id'], {'gen': 'GEN'})
+                        text = bold('Идёт создание картинки. Подожди.')
+                        _thread.start_new_thread(image_generator, (user, message['text']))
 
                     elif message['text'].lower().startswith('/post'):
                         if user['gen'] is None:
