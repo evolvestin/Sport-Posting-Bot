@@ -1,7 +1,8 @@
 import os
 import sqlite3
+from time import sleep
 from pathlib import Path
-
+sleep(20)
 
 class SQL:
     def __init__(self, database):
