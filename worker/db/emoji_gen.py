@@ -47,6 +47,7 @@ def emoji_summary(folder_path):
             for record in records:
                 all_values.append(f"({insert_items(record)})")
             emoji_db.close()
+    all_values.clear()
     return all_values
 
 
