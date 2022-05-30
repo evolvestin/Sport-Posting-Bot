@@ -238,7 +238,7 @@ def iter_post(user: SQL.get_row, message_text: str = None):
         if user['status'] in ['sport', 'time', 'teams', 'predict', 'rate']:
             message_text = re.sub(r'\n+|\s+|_+', ' ', html_secure(message_text)).strip()
         if user['status'] == 'teams':
-            message_text = re.sub('[-,.:;]', '—', message_text)
+            message_text = re.sub(r'\s+', ' ', re.sub(':', ' : ', re.sub('[-—]', ' — ', message_text)))
         if user['status'] == 'about':
             if message_text.lower() != 'нет':
                 message_text = f'\n{message_text.strip()}'
